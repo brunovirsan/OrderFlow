@@ -1,0 +1,109 @@
+services:
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0
+    ports:
+      - "2181:2181"
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    depends_on:
+      - zookeeper
+    ports:
+      - "29092:29092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:29092
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,PLAINTEXT_HOST://0.0.0.0:29092
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+
+  order-db:
+    image: postgres:15
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: orderdb
+      POSTGRES_USER: order
+      POSTGRES_PASSWORD: order123
+
+  kitchen-db:
+    image: postgres:15
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRES_DB: kitchendb
+      POSTGRES_USER: kitchen
+      POSTGRES_PASSWORD: kitchen123
+
+  notification-db:
+    image: postgres:15
+    ports:
+      - "5434:5432"
+    environment:
+      POSTGRES_DB: notificationdb
+      POSTGRES_USER: notification
+      POSTGRES_PASSWORD: notification123
+
+  order-service:
+    build:
+      context: .
+      dockerfile: order-service/Dockerfile
+    depends_on:
+      - order-db
+      - kafka
+    ports:
+      - "8081:8081"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://order-db:5432/orderdb
+      SPRING_DATASOURCE_USERNAME: order
+      SPRING_DATASOURCE_PASSWORD: order123
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+
+  kitchen-service:
+    build:
+      context: .
+      dockerfile: kitchen-service/Dockerfile
+    depends_on:
+      - kitchen-db
+      - kafka
+    ports:
+      - "8082:8082"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://kitchen-db:5432/kitchendb
+      SPRING_DATASOURCE_USERNAME: kitchen
+      SPRING_DATASOURCE_PASSWORD: kitchen123
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+
+  notification-service:
+    build:
+      context: .
+      dockerfile: notification-service/Dockerfile
+    depends_on:
+      - notification-db
+      - kafka
+    ports:
+      - "8083:8083"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://notification-db:5432/notificationdb
+      SPRING_DATASOURCE_USERNAME: notification
+      SPRING_DATASOURCE_PASSWORD: notification123
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+
+  api-gateway:
+    build:
+      context: .
+      dockerfile: api-gateway/Dockerfile
+    depends_on:
+      - order-service
+      - kitchen-service
+    ports:
+      - "8080:8080"
+    environment:
+      ORDER_SERVICE_URI: http://order-service:8081
+      KITCHEN_SERVICE_URI: http://kitchen-service:8082
